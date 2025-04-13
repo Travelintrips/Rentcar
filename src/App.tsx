@@ -24,7 +24,7 @@ import BookingManagement from "./components/admin/BookingManagement";
 import InspectionManagement from "./components/admin/InspectionManagement";
 import ChecklistManagement from "./components/admin/ChecklistManagement";
 import DamageManagement from "./components/admin/DamageManagement";
-import VehicleInventory from "./components/admin/VehicleInventory";
+
 import { supabase } from "./lib/supabase";
 
 function App() {
@@ -109,7 +109,7 @@ function App() {
 
               <Route path="/" element={<Home />} />
               <Route
-                path="/admin"
+                path="admin"
                 element={
                   <ProtectedRoute requiredRole="Admin">
                     <AdminLayout />
@@ -126,10 +126,6 @@ function App() {
                 <Route path="inspections" element={<InspectionManagement />} />
                 <Route path="checklist" element={<ChecklistManagement />} />
                 <Route path="damages" element={<DamageManagement />} />
-                <Route
-                  path="vehicle-inventory"
-                  element={<VehicleInventory />}
-                />
               </Route>
 
               {/* Allow Tempo routes to capture /tempobook paths */}
@@ -152,7 +148,7 @@ function App() {
             <Route path="/booking" element={<BookingPage />} />
 
             <Route
-              path="/admin"
+              path="admin"
               element={
                 <ProtectedRoute requiredRole="Admin">
                   <AdminLayout />
@@ -169,7 +165,6 @@ function App() {
               <Route path="inspections" element={<InspectionManagement />} />
               <Route path="checklist" element={<ChecklistManagement />} />
               <Route path="damages" element={<DamageManagement />} />
-              <Route path="vehicle-inventory" element={<VehicleInventory />} />
             </Route>
 
             {/* Catch-all route */}

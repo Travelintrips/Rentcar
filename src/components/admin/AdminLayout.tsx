@@ -17,12 +17,15 @@ import {
   ArrowLeft,
   CheckSquare,
   Package,
+  Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { supabase } from "@/lib/supabase";
 
 const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const [searchValue, setSearchValue] = React.useState("");
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -37,6 +40,13 @@ const AdminLayout = () => {
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
+  };
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Implement search functionality here
+    console.log("Searching for:", searchValue);
+    // You can navigate to a search results page or filter the current view
   };
 
   return (
@@ -70,87 +80,108 @@ const AdminLayout = () => {
           </Button>
         </div>
 
+        {/* Search Bar - Only visible when sidebar is open */}
+        {sidebarOpen && (
+          <div className="px-4 pt-4">
+            <form onSubmit={handleSearch} className="relative">
+              <Input
+                type="text"
+                placeholder="Search..."
+                value={searchValue}
+                onChange={(e) => setSearchValue(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-white/50 pr-8"
+              />
+              <button
+                type="submit"
+                className="absolute right-2 top-1/2 transform -translate-y-1/2 text-white/70 hover:text-white"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+            </form>
+          </div>
+        )}
+
         {/* Sidebar Menu */}
         <div className="p-4 mt-2">
           <nav className="space-y-2">
             <Link
-              to="/admin"
+              to=""
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname === "/admin" || location.pathname === "/admin/" ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <BarChart3 className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Dashboard</span>}
             </Link>
             <Link
-              to="/admin/customers"
+              to="customers"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/customers") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <User className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Customers</span>}
             </Link>
             <Link
-              to="/admin/drivers"
+              to="drivers"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/drivers") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <UserCog className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Drivers</span>}
             </Link>
             <Link
-              to="/admin/bookings"
+              to="bookings"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/bookings") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <CalendarDays className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Bookings</span>}
             </Link>
             <Link
-              to="/admin/cars"
+              to="cars"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/cars") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <Car className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Cars</span>}
             </Link>
             <Link
-              to="/admin/staff"
+              to="staff"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/staff") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <Users className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Staff Admin</span>}
             </Link>
             <Link
-              to="/admin/payments"
+              to="payments"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/payments") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <CreditCard className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Payments</span>}
             </Link>
             <Link
-              to="/admin/inspections"
+              to="inspections"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/inspections") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <ClipboardCheck className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Inspection</span>}
             </Link>
             <Link
-              to="/admin/damages"
+              to="damages"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/damages") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <AlertTriangle className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Damage</span>}
             </Link>
             <Link
-              to="/admin/checklist"
+              to="checklist"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/checklist") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
             >
               <CheckSquare className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Checklist Items</span>}
             </Link>
-            <Link
-              to="/admin/vehicle-inventory"
-              className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/vehicle-inventory") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
-            >
-              <Package className="h-5 w-5 text-white" />
-              {sidebarOpen && <span className="ml-3">Vehicle Inventory</span>}
-            </Link>
           </nav>
+
+          {/* Search Value Display */}
+          {sidebarOpen && searchValue && (
+            <div className="mt-4 p-3 bg-white/10 rounded-lg text-white text-sm">
+              <p>Search: {searchValue}</p>
+            </div>
+          )}
 
           {/* Sign Out Button */}
           <div className="mt-8 border-t border-white/20 pt-4">
@@ -186,6 +217,24 @@ const AdminLayout = () => {
               </h1>
             </div>
             <div className="flex gap-2">
+              {/* Mobile Search */}
+              <div className="hidden md:flex relative">
+                <Input
+                  type="text"
+                  placeholder="Search..."
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  className="w-48 bg-white/5 border-primary-tosca/30"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="absolute right-0 top-0 h-full text-primary-tosca"
+                  onClick={() => console.log("Searching for:", searchValue)}
+                >
+                  <Search className="h-4 w-4" />
+                </Button>
+              </div>
               <Button
                 variant="outline"
                 size="sm"

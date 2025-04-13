@@ -479,6 +479,13 @@ const PreRentalInspectionForm: React.FC<PreRentalInspectionFormProps> = ({
     }
   };
 
+  // Function to handle checking/unchecking all items at once
+  const handleCheckAll = (checkAll: boolean) => {
+    checklistItems.forEach((item) => {
+      form.setValue(`item_${item.id}`, checkAll);
+    });
+  };
+
   return (
     <Card className="w-full max-w-3xl mx-auto bg-background border shadow-md">
       <CardHeader>
@@ -532,133 +539,156 @@ const PreRentalInspectionForm: React.FC<PreRentalInspectionFormProps> = ({
                   </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {checklistItems.map((item) => (
-                    <FormField
-                      key={item.id}
-                      control={form.control}
-                      name={`item_${item.id}`}
-                      render={({ field }) => (
-                        <FormItem
-                          className={`rounded-md border p-4 hover:bg-muted/50 transition-colors ${item.is_required ? "border-amber-300" : ""}`}
-                        >
-                          <div className="flex justify-between items-center mb-2">
-                            <div>
-                              <FormLabel className="text-base font-medium flex items-center gap-1">
-                                {item.name}
-                                {item.is_required && (
-                                  <span className="text-amber-500 text-xs font-normal">
-                                    (Required)
-                                  </span>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h3 className="font-medium">Checklist Items</h3>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCheckAll(true)}
+                      >
+                        Check All
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleCheckAll(false)}
+                      >
+                        Uncheck All
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {checklistItems.map((item) => (
+                      <FormField
+                        key={item.id}
+                        control={form.control}
+                        name={`item_${item.id}`}
+                        render={({ field }) => (
+                          <FormItem
+                            className={`rounded-md border p-4 hover:bg-muted/50 transition-colors ${item.is_required ? "border-amber-300" : ""}`}
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <div>
+                                <FormLabel className="text-base font-medium flex items-center gap-1">
+                                  {item.name}
+                                  {item.is_required && (
+                                    <span className="text-amber-500 text-xs font-normal">
+                                      (Required)
+                                    </span>
+                                  )}
+                                </FormLabel>
+                                {item.damage_value > 0 && (
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Damage Value: Rp{" "}
+                                    {item.damage_value.toLocaleString()}
+                                  </div>
                                 )}
-                              </FormLabel>
-                              {item.damage_value > 0 && (
-                                <div className="text-xs text-muted-foreground mt-1">
-                                  Damage Value: Rp{" "}
-                                  {item.damage_value.toLocaleString()}
+                              </div>
+                              <div className="flex space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => field.onChange(true)}
+                                  className={`p-2 rounded-full transition-colors ${field.value === true ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground"}`}
+                                >
+                                  <Check className="h-5 w-5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => field.onChange(false)}
+                                  className={`p-2 rounded-full transition-colors ${field.value === false ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"}`}
+                                >
+                                  <X className="h-5 w-5" />
+                                </button>
+                              </div>
+                            </div>
+                            {item.description && (
+                              <FormDescription className="mt-1">
+                                {item.description}
+                              </FormDescription>
+                            )}
+                            <div className="mt-2 flex items-center">
+                              <div
+                                className={`text-sm font-medium flex items-center ${field.value === true ? "text-green-600" : field.value === false ? "text-red-600" : "text-muted-foreground"}`}
+                              >
+                                {field.value === true && (
+                                  <>
+                                    <Check className="h-4 w-4 mr-1" />
+                                    <span>Baik</span>
+                                  </>
+                                )}
+                                {field.value === false && (
+                                  <>
+                                    <X className="h-4 w-4 mr-1" />
+                                    <span>Rusak</span>
+                                  </>
+                                )}
+                                {field.value === undefined && (
+                                  <span>Belum diperiksa</span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Item photos section */}
+                            <div className="mt-3 pt-3 border-t border-gray-100">
+                              <div className="flex justify-between items-center mb-2">
+                                <span className="text-xs font-medium">
+                                  Item Photos
+                                </span>
+                                <label className="flex items-center gap-1 text-xs text-primary cursor-pointer hover:underline">
+                                  <Camera className="h-3 w-3" />
+                                  Add Photo
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    multiple
+                                    onChange={(e) =>
+                                      handleItemPhotoChange(item.id, e)
+                                    }
+                                    className="hidden"
+                                  />
+                                </label>
+                              </div>
+
+                              {itemPhotoUrls[item.id] &&
+                              itemPhotoUrls[item.id].length > 0 ? (
+                                <div className="grid grid-cols-3 gap-2 mt-2">
+                                  {itemPhotoUrls[item.id].map((url, index) => (
+                                    <div
+                                      key={index}
+                                      className="relative h-16 rounded-md overflow-hidden border"
+                                    >
+                                      <img
+                                        src={url}
+                                        alt={`${item.name} photo ${index + 1}`}
+                                        className="w-full h-full object-cover"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          removeItemPhoto(item.id, index)
+                                        }
+                                        className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full p-0.5"
+                                      >
+                                        <X className="h-3 w-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="text-xs text-muted-foreground italic">
+                                  No photos added
                                 </div>
                               )}
                             </div>
-                            <div className="flex space-x-2">
-                              <button
-                                type="button"
-                                onClick={() => field.onChange(true)}
-                                className={`p-2 rounded-full transition-colors ${field.value === true ? "bg-green-100 text-green-600" : "bg-muted text-muted-foreground"}`}
-                              >
-                                <Check className="h-5 w-5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => field.onChange(false)}
-                                className={`p-2 rounded-full transition-colors ${field.value === false ? "bg-red-100 text-red-600" : "bg-muted text-muted-foreground"}`}
-                              >
-                                <X className="h-5 w-5" />
-                              </button>
-                            </div>
-                          </div>
-                          {item.description && (
-                            <FormDescription className="mt-1">
-                              {item.description}
-                            </FormDescription>
-                          )}
-                          <div className="mt-2 flex items-center">
-                            <div
-                              className={`text-sm font-medium flex items-center ${field.value === true ? "text-green-600" : field.value === false ? "text-red-600" : "text-muted-foreground"}`}
-                            >
-                              {field.value === true && (
-                                <>
-                                  <Check className="h-4 w-4 mr-1" />
-                                  <span>Baik</span>
-                                </>
-                              )}
-                              {field.value === false && (
-                                <>
-                                  <X className="h-4 w-4 mr-1" />
-                                  <span>Rusak</span>
-                                </>
-                              )}
-                              {field.value === undefined && (
-                                <span>Belum diperiksa</span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Item photos section */}
-                          <div className="mt-3 pt-3 border-t border-gray-100">
-                            <div className="flex justify-between items-center mb-2">
-                              <span className="text-xs font-medium">
-                                Item Photos
-                              </span>
-                              <label className="flex items-center gap-1 text-xs text-primary cursor-pointer hover:underline">
-                                <Camera className="h-3 w-3" />
-                                Add Photo
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  multiple
-                                  onChange={(e) =>
-                                    handleItemPhotoChange(item.id, e)
-                                  }
-                                  className="hidden"
-                                />
-                              </label>
-                            </div>
-
-                            {itemPhotoUrls[item.id] &&
-                            itemPhotoUrls[item.id].length > 0 ? (
-                              <div className="grid grid-cols-3 gap-2 mt-2">
-                                {itemPhotoUrls[item.id].map((url, index) => (
-                                  <div
-                                    key={index}
-                                    className="relative h-16 rounded-md overflow-hidden border"
-                                  >
-                                    <img
-                                      src={url}
-                                      alt={`${item.name} photo ${index + 1}`}
-                                      className="w-full h-full object-cover"
-                                    />
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        removeItemPhoto(item.id, index)
-                                      }
-                                      className="absolute top-0.5 right-0.5 bg-red-500 text-white rounded-full p-0.5"
-                                    >
-                                      <X className="h-3 w-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <div className="text-xs text-muted-foreground italic">
-                                No photos added
-                              </div>
-                            )}
-                          </div>
-                        </FormItem>
-                      )}
-                    />
-                  ))}
+                          </FormItem>
+                        )}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 

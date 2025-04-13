@@ -341,18 +341,7 @@ export default function BookingManagement() {
 
   const handleApproveBooking = async (booking: Booking) => {
     try {
-      const { data, error } = await supabase
-        .from("bookings")
-        .update({ status: "confirmed" })
-        .eq("id", booking.id)
-        .select();
-
-      if (error) throw error;
-
-      toast({
-        title: "Booking approved",
-        description: `Booking #${booking.id} has been approved successfully`,
-      });
+      console.log("Approving booking:", booking.id);
 
       // Update local state immediately to reflect changes
       setBookings((prevBookings) =>
@@ -366,8 +355,22 @@ export default function BookingManagement() {
         ),
       );
 
-      // Then refresh all bookings from the server
-      fetchBookings();
+      // Then update in database
+      const { data, error } = await supabase
+        .from("bookings")
+        .update({ status: "confirmed" })
+        .eq("id", booking.id)
+        .select();
+
+      if (error) throw error;
+
+      toast({
+        title: "Booking approved",
+        description: `Booking #${booking.id} has been approved successfully`,
+      });
+
+      // Refresh all bookings from the server
+      setTimeout(() => fetchBookings(), 500);
     } catch (error) {
       console.error("Error approving booking:", error);
       toast({
@@ -606,7 +609,13 @@ export default function BookingManagement() {
                       variant="outline"
                       size="sm"
                       className="flex items-center gap-1 bg-green-100 hover:bg-green-200 text-green-800 border-green-300"
-                      onClick={() => handleApproveBooking(booking)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleApproveBooking(booking);
+                        return false;
+                      }}
+                      type="button"
                     >
                       <ClipboardCheck className="h-4 w-4" />
                       Approve

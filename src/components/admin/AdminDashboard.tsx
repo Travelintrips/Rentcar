@@ -16,6 +16,24 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Calendar } from "@/components/ui/calendar";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  format,
+  subDays,
+  startOfDay,
+  endOfDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  startOfYear,
+  endOfYear,
+} from "date-fns";
 import { supabase } from "@/lib/supabase";
 import {
   Users,
@@ -39,7 +57,7 @@ import {
   SortDesc,
   Wrench,
   CarFront,
-  Calendar,
+  Calendar as CalendarIcon,
   CreditCard as CreditCardIcon,
 } from "lucide-react";
 import CustomerManagement from "./CustomerManagement";
@@ -50,7 +68,7 @@ import BookingManagement from "./BookingManagement";
 import StaffPage from "./StaffPage";
 import StatCard from "./StatCard";
 import DashboardCharts from "./DashboardCharts";
-import VehicleInventory from "./VehicleInventory";
+import DashboardStats from "./DashboardStats";
 
 interface DashboardStats {
   totalVehicles: number;
@@ -58,6 +76,7 @@ interface DashboardStats {
   onRideVehicles: number;
   maintenanceVehicles: number;
   availableVehicles: number;
+  activeBookingsCount?: number;
   totalPayments: {
     count: number;
     amount: number;
@@ -103,6 +122,7 @@ const AdminDashboard = () => {
     onRideVehicles: 0,
     maintenanceVehicles: 0,
     availableVehicles: 0,
+    activeBookingsCount: 0,
     totalPayments: {
       count: 0,
       amount: 0,
@@ -134,6 +154,20 @@ const AdminDashboard = () => {
     bookingStatus: "",
     paymentType: "",
   });
+
+  // Date range filter states
+  const [dateRange, setDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined,
+  });
+
+  // Active period filter
+  const [activePeriod, setActivePeriod] = useState<
+    "day" | "week" | "month" | "year" | null
+  >(null);
   const [sortConfig, setSortConfig] = useState<{
     key: keyof BookingData | "";
     direction: "asc" | "desc";
@@ -155,325 +189,380 @@ const AdminDashboard = () => {
   };
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-
-        // Fetch vehicles data
-        const { data: vehicles, error: vehiclesError } = await supabase
-          .from("vehicles")
-          .select("*");
-
-        if (vehiclesError) throw vehiclesError;
-
-        console.log("Vehicles data:", vehicles); // Debug log to check vehicles data
-
-        // Fetch bookings data
-        const { data: bookings, error: bookingsError } = await supabase
-          .from("bookings")
-          .select("*");
-
-        if (bookingsError) throw bookingsError;
-
-        // Fetch payments data
-        const { data: payments, error: paymentsError } = await supabase
-          .from("payments")
-          .select("*");
-
-        if (paymentsError) throw paymentsError;
-
-        // Get current month payments
-        const now = new Date();
-        const startOfMonth = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          1,
-        ).toISOString();
-        const endOfMonth = new Date(
-          now.getFullYear(),
-          now.getMonth() + 1,
-          0,
-        ).toISOString();
-
-        const { data: monthlyPayments, error: monthlyPaymentsError } =
-          await supabase
-            .from("payments")
-            .select("*")
-            .gte("created_at", startOfMonth)
-            .lte("created_at", endOfMonth);
-
-        if (monthlyPaymentsError) throw monthlyPaymentsError;
-
-        // Calculate dashboard statistics from real data
-        const totalVehicles = vehicles?.length || 0;
-
-        // Get all vehicles that don't have 'available' status
-        const bookedVehicles =
-          vehicles?.filter(
-            (vehicle) =>
-              vehicle.status !== "available" && vehicle.status !== "Available",
-          ).length || 0;
-
-        const onRideVehicles =
-          bookings?.filter(
-            (booking) => booking.status.toLowerCase() === "onride",
-          ).length || 0;
-
-        const maintenanceVehicles =
-          vehicles?.filter((vehicle) => vehicle.status === "Maintenance")
-            .length || 0;
-
-        // Only count vehicles where is_available is true
-        const availableVehiclesCount =
-          vehicles?.filter(
-            (vehicle) =>
-              vehicle.is_available === true || vehicle.is_available === "true",
-          ).length || 0;
-
-        console.log("Available vehicles count:", availableVehiclesCount);
-        console.log(
-          "Vehicles with status=true:",
-          vehicles?.filter((vehicle) => vehicle.status === true).length || 0,
-        );
-        console.log(
-          "Vehicles with is_available=true:",
-          vehicles?.filter((vehicle) => vehicle.is_available === true).length ||
-            0,
-        );
-        console.log(
-          "Vehicles with available=true:",
-          vehicles?.filter((vehicle) => vehicle.available === true).length || 0,
-        );
-
-        const paidPayments =
-          payments?.filter(
-            (payment) =>
-              payment.status === "Paid" || payment.status === "Completed",
-          ) || [];
-
-        const unpaidPayments =
-          payments?.filter(
-            (payment) =>
-              payment.status === "Unpaid" || payment.status === "Partial",
-          ) || [];
-
-        const totalPaidAmount = paidPayments.reduce(
-          (sum, payment) => sum + (payment.amount || 0),
-          0,
-        );
-
-        const totalUnpaidAmount = unpaidPayments.reduce(
-          (sum, payment) => sum + (payment.amount || 0),
-          0,
-        );
-
-        // Calculate monthly payments total
-        const monthlyPaidPayments =
-          monthlyPayments?.filter(
-            (payment) =>
-              payment.status === "Paid" || payment.status === "Completed",
-          ) || [];
-
-        const monthlyTotalAmount = monthlyPaidPayments.reduce(
-          (sum, payment) => sum + (payment.amount || 0),
-          0,
-        );
-
-        // Prepare chart data
-        // 1. Vehicle Status Pie Chart
-        const vehicleStatusData = [
-          { name: "Booked", value: bookedVehicles },
-          { name: "On Ride", value: onRideVehicles },
-          { name: "Available", value: availableVehiclesCount },
-          { name: "Maintenance", value: maintenanceVehicles },
-        ];
-
-        // 2. Payment Data for Bar Chart
-        const months = [
-          "Jan",
-          "Feb",
-          "Mar",
-          "Apr",
-          "May",
-          "Jun",
-          "Jul",
-          "Aug",
-          "Sep",
-          "Oct",
-          "Nov",
-          "Dec",
-        ];
-        const paymentData = [];
-
-        // Group payments by month
-        const paidByMonth = {};
-        const unpaidByMonth = {};
-
-        // Initialize all months with zero
-        months.forEach((month) => {
-          paidByMonth[month] = 0;
-          unpaidByMonth[month] = 0;
-        });
-
-        // Aggregate paid payments by month
-        paidPayments.forEach((payment) => {
-          if (payment.created_at) {
-            const date = new Date(payment.created_at);
-            const month = months[date.getMonth()];
-            paidByMonth[month] += payment.amount || 0;
-          }
-        });
-
-        // Aggregate unpaid payments by month
-        unpaidPayments.forEach((payment) => {
-          if (payment.created_at) {
-            const date = new Date(payment.created_at);
-            const month = months[date.getMonth()];
-            unpaidByMonth[month] += payment.amount || 0;
-          }
-        });
-
-        // Create payment data array for chart
-        months.forEach((month) => {
-          paymentData.push({
-            name: month,
-            paid: paidByMonth[month],
-            unpaid: unpaidByMonth[month],
-          });
-        });
-
-        // 3. Booking Trend Line Chart
-        const bookingsByDate = {};
-        const last30Days = [];
-
-        // Generate last 30 days
-        for (let i = 29; i >= 0; i--) {
-          const date = new Date();
-          date.setDate(date.getDate() - i);
-          const dateStr = date.toISOString().split("T")[0];
-          bookingsByDate[dateStr] = 0;
-          last30Days.push(dateStr);
-        }
-
-        // Count bookings by date
-        bookings?.forEach((booking) => {
-          if (booking.created_at) {
-            const dateStr = new Date(booking.created_at)
-              .toISOString()
-              .split("T")[0];
-            if (bookingsByDate[dateStr] !== undefined) {
-              bookingsByDate[dateStr] += 1;
-            }
-          }
-        });
-
-        const bookingTrendData = last30Days.map((date) => ({
-          date: date,
-          bookings: bookingsByDate[date],
-        }));
-
-        // 4. Payment Method Doughnut Chart
-        const paymentMethodCounts = {
-          Cash: 0,
-          "Bank Transfer": 0,
-          "Credit Card": 0,
-          "Debit Card": 0,
-          Other: 0,
-        };
-
-        payments?.forEach((payment) => {
-          const method = payment.payment_method || "Other";
-          if (paymentMethodCounts[method] !== undefined) {
-            paymentMethodCounts[method] += 1;
-          } else {
-            paymentMethodCounts["Other"] += 1;
-          }
-        });
-
-        const paymentMethodData = Object.entries(paymentMethodCounts).map(
-          ([name, value]) => ({
-            name,
-            value,
-          }),
-        );
-
-        // Set dashboard stats with real data
-        setDashboardStats({
-          totalVehicles,
-          bookedVehicles,
-          onRideVehicles,
-          maintenanceVehicles,
-          availableVehicles: availableVehiclesCount,
-          totalPayments: {
-            count: paidPayments.length,
-            amount: totalPaidAmount,
-            monthlyAmount: monthlyTotalAmount,
-          },
-          totalUnpaid: {
-            count: unpaidPayments.length,
-            amount: totalUnpaidAmount,
-          },
-        });
-
-        // Set chart data
-        setChartData({
-          vehicleStatusData,
-          paymentData,
-          bookingTrendData,
-          paymentMethodData,
-        });
-
-        // Transform bookings data for the table
-        const bookingTableData: BookingData[] =
-          bookings?.map((booking) => ({
-            id: booking.id,
-            vehicleType: booking.vehicle_type || "",
-            bookingStatus: (booking.status as any) || "Booked",
-            paymentStatus: (booking.payment_status as any) || "Unpaid",
-            nominalPaid: booking.amount_paid || 0,
-            nominalUnpaid: booking.amount_due - (booking.amount_paid || 0),
-            customer: booking.customer_name || "",
-            startDate: booking.start_date || "",
-            endDate: booking.end_date || "",
-            createdAt: booking.created_at || "",
-          })) || [];
-
-        setBookingData(bookingTableData);
-        setFilteredBookingData(bookingTableData);
-        setLoading(false);
-      } catch (error) {
-        console.error("Error fetching dashboard data:", error);
-        setLoading(false);
-
-        // Initialize with empty data if there's an error
-        setDashboardStats({
-          totalVehicles: 0,
-          bookedVehicles: 0,
-          onRideVehicles: 0,
-          maintenanceVehicles: 0,
-          availableVehicles: 0,
-          totalPayments: {
-            count: 0,
-            amount: 0,
-            monthlyAmount: 0,
-          },
-          totalUnpaid: {
-            count: 0,
-            amount: 0,
-          },
-        });
-
-        setBookingData([]);
-        setFilteredBookingData([]);
-      }
-    };
-
     fetchDashboardData();
-  }, []);
+  }, [dateRange.from, dateRange.to]);
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch vehicles data
+      const { data: vehicles, error: vehiclesError } = await supabase
+        .from("vehicles")
+        .select("*");
+
+      if (vehiclesError) throw vehiclesError;
+
+      console.log("Vehicles data:", vehicles); // Debug log to check vehicles data
+
+      // Fetch bookings data
+      const { data: bookings, error: bookingsError } = await supabase
+        .from("bookings")
+        .select("*");
+
+      if (bookingsError) throw bookingsError;
+
+      // Count active bookings (not completed)
+      const activeBookingsCount =
+        bookings?.filter(
+          (booking) => booking.status.toLowerCase() !== "completed",
+        ).length || 0;
+
+      // Fetch payments data
+      const { data: payments, error: paymentsError } = await supabase
+        .from("payments")
+        .select("*");
+
+      if (paymentsError) throw paymentsError;
+
+      // Get current month payments
+      const now = new Date();
+      const startOfMonth = new Date(
+        now.getFullYear(),
+        now.getMonth(),
+        1,
+      ).toISOString();
+      const endOfMonth = new Date(
+        now.getFullYear(),
+        now.getMonth() + 1,
+        0,
+      ).toISOString();
+
+      const { data: monthlyPayments, error: monthlyPaymentsError } =
+        await supabase
+          .from("payments")
+          .select("*")
+          .gte("created_at", startOfMonth)
+          .lte("created_at", endOfMonth);
+
+      if (monthlyPaymentsError) throw monthlyPaymentsError;
+
+      // Calculate dashboard statistics from real data
+      const totalVehicles = vehicles?.length || 0;
+
+      // Get all vehicles that don't have 'available' status
+      const bookedVehicles =
+        vehicles?.filter(
+          (vehicle) =>
+            vehicle.status !== "available" && vehicle.status !== "Available",
+        ).length || 0;
+
+      const onRideVehicles =
+        bookings?.filter((booking) => booking.status.toLowerCase() === "onride")
+          .length || 0;
+
+      const maintenanceVehicles =
+        vehicles?.filter((vehicle) => vehicle.status === "Maintenance")
+          .length || 0;
+
+      // Only count vehicles where is_available is true
+      const availableVehiclesCount =
+        vehicles?.filter(
+          (vehicle) =>
+            vehicle.is_available === true || vehicle.is_available === "true",
+        ).length || 0;
+
+      console.log("Available vehicles count:", availableVehiclesCount);
+      console.log(
+        "Vehicles with status=true:",
+        vehicles?.filter((vehicle) => vehicle.status === true).length || 0,
+      );
+      console.log(
+        "Vehicles with is_available=true:",
+        vehicles?.filter((vehicle) => vehicle.is_available === true).length ||
+          0,
+      );
+      console.log(
+        "Vehicles with available=true:",
+        vehicles?.filter((vehicle) => vehicle.available === true).length || 0,
+      );
+
+      const paidPayments =
+        payments?.filter(
+          (payment) =>
+            payment.status === "Paid" || payment.status === "Completed",
+        ) || [];
+
+      const unpaidPayments =
+        payments?.filter(
+          (payment) =>
+            payment.status === "Unpaid" || payment.status === "Partial",
+        ) || [];
+
+      const totalPaidAmount = paidPayments.reduce(
+        (sum, payment) => sum + (payment.amount || 0),
+        0,
+      );
+
+      const totalUnpaidAmount = unpaidPayments.reduce(
+        (sum, payment) => sum + (payment.amount || 0),
+        0,
+      );
+
+      // Calculate monthly payments total
+      const monthlyPaidPayments =
+        monthlyPayments?.filter(
+          (payment) =>
+            payment.status === "Paid" || payment.status === "Completed",
+        ) || [];
+
+      const monthlyTotalAmount = monthlyPaidPayments.reduce(
+        (sum, payment) => sum + (payment.amount || 0),
+        0,
+      );
+
+      // Prepare chart data
+      // 1. Vehicle Status Pie Chart
+      const vehicleStatusData = [
+        { name: "Booked", value: bookedVehicles },
+        { name: "On Ride", value: onRideVehicles },
+        { name: "Available", value: availableVehiclesCount },
+        { name: "Maintenance", value: maintenanceVehicles },
+      ];
+
+      // 2. Payment Data for Bar Chart
+      const months = [
+        "Jan",
+        "Feb",
+        "Mar",
+        "Apr",
+        "May",
+        "Jun",
+        "Jul",
+        "Aug",
+        "Sep",
+        "Oct",
+        "Nov",
+        "Dec",
+      ];
+      const paymentData = [];
+
+      // Group payments by month
+      const paidByMonth = {};
+      const unpaidByMonth = {};
+
+      // Initialize all months with zero
+      months.forEach((month) => {
+        paidByMonth[month] = 0;
+        unpaidByMonth[month] = 0;
+      });
+
+      // Aggregate paid payments by month
+      paidPayments.forEach((payment) => {
+        if (payment.created_at) {
+          const date = new Date(payment.created_at);
+          const month = months[date.getMonth()];
+          paidByMonth[month] += payment.amount || 0;
+        }
+      });
+
+      // Aggregate unpaid payments by month
+      unpaidPayments.forEach((payment) => {
+        if (payment.created_at) {
+          const date = new Date(payment.created_at);
+          const month = months[date.getMonth()];
+          unpaidByMonth[month] += payment.amount || 0;
+        }
+      });
+
+      // Create payment data array for chart
+      months.forEach((month) => {
+        paymentData.push({
+          name: month,
+          paid: paidByMonth[month],
+          unpaid: unpaidByMonth[month],
+        });
+      });
+
+      // 3. Booking Trend Line Chart
+      const bookingsByDate = {};
+      const last30Days = [];
+
+      // Generate last 30 days
+      for (let i = 29; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split("T")[0];
+        bookingsByDate[dateStr] = 0;
+        last30Days.push(dateStr);
+      }
+
+      // Count bookings by date
+      bookings?.forEach((booking) => {
+        if (booking.created_at) {
+          const dateStr = new Date(booking.created_at)
+            .toISOString()
+            .split("T")[0];
+          if (bookingsByDate[dateStr] !== undefined) {
+            bookingsByDate[dateStr] += 1;
+          }
+        }
+      });
+
+      const bookingTrendData = last30Days.map((date) => ({
+        date: date,
+        bookings: bookingsByDate[date],
+      }));
+
+      // 4. Payment Method Doughnut Chart
+      const paymentMethodCounts = {
+        Cash: 0,
+        "Bank Transfer": 0,
+        "Credit Card": 0,
+        "Debit Card": 0,
+        Other: 0,
+      };
+
+      payments?.forEach((payment) => {
+        const method = payment.payment_method || "Other";
+        if (paymentMethodCounts[method] !== undefined) {
+          paymentMethodCounts[method] += 1;
+        } else {
+          paymentMethodCounts["Other"] += 1;
+        }
+      });
+
+      const paymentMethodData = Object.entries(paymentMethodCounts).map(
+        ([name, value]) => ({
+          name,
+          value,
+        }),
+      );
+
+      // Set dashboard stats with real data
+      setDashboardStats({
+        totalVehicles,
+        bookedVehicles,
+        onRideVehicles,
+        maintenanceVehicles,
+        availableVehicles: availableVehiclesCount,
+        activeBookingsCount,
+        totalPayments: {
+          count: paidPayments.length,
+          amount: totalPaidAmount,
+          monthlyAmount: monthlyTotalAmount,
+        },
+        totalUnpaid: {
+          count: unpaidPayments.length,
+          amount: totalUnpaidAmount,
+        },
+      });
+
+      // Set chart data
+      setChartData({
+        vehicleStatusData,
+        paymentData,
+        bookingTrendData,
+        paymentMethodData,
+      });
+
+      // Transform bookings data for the table
+      const bookingTableData: BookingData[] =
+        bookings?.map((booking) => ({
+          id: booking.id,
+          vehicleType: booking.vehicle_type || "",
+          bookingStatus: (booking.status as any) || "Booked",
+          paymentStatus: (booking.payment_status as any) || "Unpaid",
+          nominalPaid: booking.amount_paid || 0,
+          nominalUnpaid: booking.amount_due - (booking.amount_paid || 0),
+          customer: booking.customer_name || "",
+          startDate: booking.start_date || "",
+          endDate: booking.end_date || "",
+          createdAt: booking.created_at || "",
+        })) || [];
+
+      setBookingData(bookingTableData);
+      setFilteredBookingData(bookingTableData);
+      setLoading(false);
+    } catch (error) {
+      console.error("Error fetching dashboard data:", error);
+      setLoading(false);
+
+      // Initialize with empty data if there's an error
+      setDashboardStats({
+        totalVehicles: 0,
+        bookedVehicles: 0,
+        onRideVehicles: 0,
+        maintenanceVehicles: 0,
+        availableVehicles: 0,
+        totalPayments: {
+          count: 0,
+          amount: 0,
+          monthlyAmount: 0,
+        },
+        totalUnpaid: {
+          count: 0,
+          amount: 0,
+        },
+      });
+
+      setBookingData([]);
+      setFilteredBookingData([]);
+    }
+  };
 
   const toggleSidebar = () => {
     setSidebarOpen(!sidebarOpen);
   };
+
+  // Apply search and filters to booking data
+  useEffect(() => {
+    let filtered = [...bookingData];
+
+    // Apply search query
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(
+        (booking) =>
+          booking.customer.toLowerCase().includes(query) ||
+          booking.id.toLowerCase().includes(query),
+      );
+    }
+
+    // Apply date filter
+    if (filterOptions.date) {
+      filtered = filtered.filter((booking) => {
+        return (
+          booking.startDate.includes(filterOptions.date) ||
+          booking.endDate.includes(filterOptions.date) ||
+          booking.createdAt.includes(filterOptions.date)
+        );
+      });
+    }
+
+    // Apply vehicle type filter
+    if (filterOptions.vehicleType) {
+      filtered = filtered.filter(
+        (booking) => booking.vehicleType === filterOptions.vehicleType,
+      );
+    }
+
+    // Apply booking status filter
+    if (filterOptions.bookingStatus) {
+      filtered = filtered.filter(
+        (booking) => booking.bookingStatus === filterOptions.bookingStatus,
+      );
+    }
+
+    // Apply payment status filter
+    if (filterOptions.paymentType) {
+      filtered = filtered.filter(
+        (booking) => booking.paymentStatus === filterOptions.paymentType,
+      );
+    }
+
+    setFilteredBookingData(filtered);
+  }, [searchQuery, filterOptions, bookingData]);
 
   return (
     <div className="flex h-screen bg-background">
@@ -545,13 +634,6 @@ const AdminDashboard = () => {
               {sidebarOpen && <span className="ml-3">Cars</span>}
             </Link>
             <Link
-              to="vehicle-inventory"
-              className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/vehicle-inventory") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen ? "justify-center" : ""}`}
-            >
-              <Car className="h-5 w-5 text-white" />
-              {sidebarOpen && <span className="ml-3">Vehicle Inventory</span>}
-            </Link>
-            <Link
               to="staff"
               className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/staff") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen ? "justify-center" : ""}`}
             >
@@ -620,69 +702,129 @@ const AdminDashboard = () => {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                <StatCard
-                  title="Total Vehicles"
-                  value={dashboardStats.totalVehicles}
-                  description="Total vehicles in fleet"
-                  icon={<Car className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/cars"
-                  bgColor="linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%)"
-                />
-                <StatCard
-                  title="Available Vehicles"
-                  value={dashboardStats.availableVehicles}
-                  description="Vehicles available for booking"
-                  icon={<Car className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/cars?is_available=true"
-                  bgColor="linear-gradient(135deg, #22c55e 0%, #16a34a 100%)"
-                />
-                <StatCard
-                  title="Booked Vehicles"
-                  value={dashboardStats.bookedVehicles}
-                  description="Vehicles with confirmed booking status"
-                  icon={<Calendar className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/bookings?status=confirmed"
-                  bgColor="linear-gradient(135deg, #34d399 0%, #10b981 100%)"
-                />
+              {/* Date Range Filter */}
+              <div className="mb-6 flex flex-wrap gap-4 items-center">
+                <div className="flex-1 min-w-[240px]">
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-start text-left font-normal h-10"
+                      >
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange.from ? (
+                          dateRange.to ? (
+                            <>
+                              {format(dateRange.from, "PPP")} -{" "}
+                              {format(dateRange.to, "PPP")}
+                            </>
+                          ) : (
+                            format(dateRange.from, "PPP")
+                          )
+                        ) : (
+                          <span>Pick a date range</span>
+                        )}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="range"
+                        selected={{
+                          from: dateRange.from,
+                          to: dateRange.to,
+                        }}
+                        onSelect={setDateRange}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
 
-                <StatCard
-                  title="Onride Vehicles"
-                  value={dashboardStats.onRideVehicles}
-                  description="Vehicles currently on ride"
-                  icon={<CarFront className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/bookings?status=onride"
-                  bgColor="linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)"
-                />
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant={activePeriod === "day" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date();
+                      setDateRange({
+                        from: startOfDay(today),
+                        to: endOfDay(today),
+                      });
+                      setActivePeriod("day");
+                    }}
+                  >
+                    Today
+                  </Button>
+                  <Button
+                    variant={activePeriod === "week" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date();
+                      setDateRange({
+                        from: startOfWeek(today, { weekStartsOn: 1 }),
+                        to: endOfWeek(today, { weekStartsOn: 1 }),
+                      });
+                      setActivePeriod("week");
+                    }}
+                  >
+                    This Week
+                  </Button>
+                  <Button
+                    variant={activePeriod === "month" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date();
+                      setDateRange({
+                        from: startOfMonth(today),
+                        to: endOfMonth(today),
+                      });
+                      setActivePeriod("month");
+                    }}
+                  >
+                    This Month
+                  </Button>
+                  <Button
+                    variant={activePeriod === "year" ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      const today = new Date();
+                      setDateRange({
+                        from: startOfYear(today),
+                        to: endOfYear(today),
+                      });
+                      setActivePeriod("year");
+                    }}
+                  >
+                    This Year
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setDateRange({ from: undefined, to: undefined });
+                      setActivePeriod(null);
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </div>
+              </div>
 
-                <StatCard
-                  title="Maintenance"
-                  value={dashboardStats.maintenanceVehicles}
-                  description="Vehicles under maintenance"
-                  icon={<Wrench className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/cars?status=maintenance"
-                  bgColor="linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)"
-                />
-
-                <StatCard
-                  title="Total Not Paid"
-                  value={dashboardStats.totalUnpaid.count}
-                  description={`${dashboardStats.totalUnpaid.amount.toLocaleString()} pending`}
-                  icon={<CreditCardIcon className="h-6 w-6" />}
-                  trend="neutral"
-                  trendValue=""
-                  to="/admin/payments?status=unpaid"
-                  bgColor="linear-gradient(135deg, #fb7185 0%, #e11d48 100%)"
+              {/* Dashboard Stats Section */}
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold tracking-tight mb-6">
+                  Dashboard Overview
+                </h2>
+                <DashboardStats
+                  totalVehicles={dashboardStats.totalVehicles}
+                  bookedVehicles={dashboardStats.bookedVehicles}
+                  onRideVehicles={dashboardStats.onRideVehicles}
+                  maintenanceVehicles={dashboardStats.maintenanceVehicles}
+                  availableVehicles={dashboardStats.availableVehicles}
+                  activeBookingsCount={dashboardStats.activeBookingsCount || 0}
+                  totalPayments={dashboardStats.totalPayments}
+                  totalUnpaid={dashboardStats.totalUnpaid}
+                  isLoading={loading}
                 />
               </div>
 
@@ -694,30 +836,6 @@ const AdminDashboard = () => {
                 paymentMethodData={chartData.paymentMethodData}
                 isLoading={loading}
               />
-
-              {/* Vehicle Inventory Section */}
-              <div className="mt-8">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Vehicle Inventory</CardTitle>
-                    <CardDescription>
-                      Quick overview of vehicle inventory status
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="h-[400px] overflow-auto">
-                      <VehicleInventory />
-                    </div>
-                  </CardContent>
-                  <CardFooter className="flex justify-end">
-                    <Button asChild variant="outline">
-                      <Link to="/admin/vehicle-inventory">
-                        View Full Inventory
-                      </Link>
-                    </Button>
-                  </CardFooter>
-                </Card>
-              </div>
 
               {/* Detailed Data Table Section */}
               <div className="mt-8">
@@ -835,72 +953,9 @@ const AdminDashboard = () => {
                             paymentType: "",
                           });
                           setSearchQuery("");
-                          setFilteredBookingData(bookingData);
                         }}
                       >
                         Reset Filters
-                      </Button>
-                      <Button
-                        variant="default"
-                        onClick={() => {
-                          let filtered = [...bookingData];
-
-                          // Apply date filter
-                          if (filterOptions.date) {
-                            filtered = filtered.filter((booking) => {
-                              return (
-                                booking.startDate.includes(
-                                  filterOptions.date,
-                                ) ||
-                                booking.endDate.includes(filterOptions.date) ||
-                                booking.createdAt.includes(filterOptions.date)
-                              );
-                            });
-                          }
-
-                          // Apply vehicle type filter
-                          if (filterOptions.vehicleType) {
-                            filtered = filtered.filter(
-                              (booking) =>
-                                booking.vehicleType ===
-                                filterOptions.vehicleType,
-                            );
-                          }
-
-                          // Apply booking status filter
-                          if (filterOptions.bookingStatus) {
-                            filtered = filtered.filter(
-                              (booking) =>
-                                booking.bookingStatus ===
-                                filterOptions.bookingStatus,
-                            );
-                          }
-
-                          // Apply payment status filter
-                          if (filterOptions.paymentType) {
-                            filtered = filtered.filter(
-                              (booking) =>
-                                booking.paymentStatus ===
-                                filterOptions.paymentType,
-                            );
-                          }
-
-                          // Apply search query
-                          if (searchQuery) {
-                            const query = searchQuery.toLowerCase();
-                            filtered = filtered.filter(
-                              (booking) =>
-                                booking.customer
-                                  .toLowerCase()
-                                  .includes(query) ||
-                                booking.id.toLowerCase().includes(query),
-                            );
-                          }
-
-                          setFilteredBookingData(filtered);
-                        }}
-                      >
-                        Apply Filters
                       </Button>
                     </div>
                   </CardHeader>

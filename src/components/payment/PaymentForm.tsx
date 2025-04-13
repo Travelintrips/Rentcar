@@ -505,37 +505,37 @@ const PaymentForm: React.FC<PaymentFormProps> = ({
                           {...field}
                         />
                       </FormControl>
-                      <FormDescription>
-                        <div>
+                      <FormDescription asChild>
+                        <span>
                           {!isDamagePaymentMode ? (
-                            <div className="space-y-1">
-                              <div>
+                            <span className="space-y-1 block">
+                              <span className="block">
                                 Booking amount: Rp{" "}
                                 {totalAmount.toLocaleString()}
-                              </div>
+                              </span>
                               {damageAmount > 0 && (
-                                <div>
+                                <span className="block">
                                   Damage fees: Rp{" "}
                                   {damageAmount.toLocaleString()}
-                                </div>
+                                </span>
                               )}
-                              <div className="font-semibold">
+                              <span className="font-semibold block">
                                 Total amount: Rp{" "}
                                 {(totalAmount + damageAmount).toLocaleString()}
-                              </div>
-                            </div>
+                              </span>
+                            </span>
                           ) : (
-                            <div className="space-y-1">
-                              <div className="font-semibold">
+                            <span className="space-y-1 block">
+                              <span className="font-semibold block">
                                 Selected damage fees: Rp{" "}
                                 {calculateSelectedDamagesTotal().toLocaleString()}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
+                              </span>
+                              <span className="text-sm text-muted-foreground block">
                                 {selectedDamages.length} item(s) selected
-                              </div>
-                            </div>
+                              </span>
+                            </span>
                           )}
-                        </div>
+                        </span>
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

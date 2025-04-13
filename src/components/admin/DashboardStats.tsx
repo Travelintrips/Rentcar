@@ -22,7 +22,14 @@ import {
   Pie,
   Cell,
 } from "recharts";
-import { Users, Car, CreditCard, Calendar } from "lucide-react";
+import {
+  Users,
+  Car,
+  CreditCard,
+  Calendar,
+  Wrench,
+  CheckCircle,
+} from "lucide-react";
 
 interface DashboardData {
   totalUsers: number;
@@ -33,11 +40,23 @@ interface DashboardData {
   bookingsByStatus: any[];
   revenueByMonth: any[];
   vehicleUtilization: any[];
+  maintenanceCount: number;
+  readyCount: number;
+  activeBookingsCount?: number;
 }
 
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 
-export default function DashboardStats() {
+interface DashboardStatsProps {
+  dateRange?: {
+    from: Date | undefined;
+    to: Date | undefined;
+  };
+}
+
+export default function DashboardStats({
+  dateRange,
+}: DashboardStatsProps = {}) {
   const [data, setData] = useState<DashboardData>({
     totalUsers: 0,
     totalVehicles: 0,
@@ -47,6 +66,9 @@ export default function DashboardStats() {
     bookingsByStatus: [],
     revenueByMonth: [],
     vehicleUtilization: [],
+    maintenanceCount: 0,
+    readyCount: 0,
+    activeBookingsCount: 0,
   });
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -60,11 +82,24 @@ export default function DashboardStats() {
 
     // Clean up the interval when component unmounts
     return () => clearInterval(intervalId);
-  }, []);
+  }, [dateRange?.from, dateRange?.to]);
 
   const fetchDashboardData = async () => {
     try {
       setIsLoading(true);
+
+      // Prepare date filters if date range is provided
+      let dateFilter = {};
+      if (dateRange?.from) {
+        dateFilter = { gte: dateRange.from.toISOString() };
+
+        if (dateRange.to) {
+          dateFilter = {
+            gte: dateRange.from.toISOString(),
+            lte: dateRange.to.toISOString(),
+          };
+        }
+      }
 
       // Fetch total users
       const { count: userCount, error: userError } = await supabase
@@ -73,25 +108,72 @@ export default function DashboardStats() {
 
       if (userError) throw userError;
 
-      // Fetch total vehicles
+      // Fetch total vehicles (excluding maintenance and suspended)
       const { count: vehicleCount, error: vehicleError } = await supabase
         .from("vehicles")
-        .select("*", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true })
+        .or(
+          "status.neq.Maintenance,status.neq.maintenance,status.neq.Suspended,status.neq.suspended",
+        );
 
       if (vehicleError) throw vehicleError;
 
-      // Fetch total bookings
-      const { count: bookingCount, error: bookingError } = await supabase
+      // Fetch bookings that are not completed
+      let activeBookingsQuery = supabase
         .from("bookings")
-        .select("*", { count: "exact", head: true });
+        .select("*", { count: "exact", head: true })
+        .or("status.neq.completed,status.neq.Completed");
+
+      // Apply date filter if provided
+      if (dateRange?.from) {
+        activeBookingsQuery = activeBookingsQuery.filter(
+          "created_at",
+          dateRange.to ? "between" : "gte",
+          dateRange.from.toISOString(),
+          dateRange.to ? dateRange.to.toISOString() : undefined,
+        );
+      }
+
+      const { count: activeBookingsCount, error: activeBookingsError } =
+        await activeBookingsQuery;
+
+      if (activeBookingsError) throw activeBookingsError;
+
+      // Fetch total bookings
+      let bookingsQuery = supabase.from("bookings");
+
+      // Apply date filter if provided
+      if (dateRange?.from) {
+        bookingsQuery = bookingsQuery.filter(
+          "created_at",
+          dateRange.to ? "between" : "gte",
+          dateRange.from.toISOString(),
+          dateRange.to ? dateRange.to.toISOString() : undefined,
+        );
+      }
+
+      const { count: bookingCount, error: bookingError } =
+        await bookingsQuery.select("*", { count: "exact", head: true });
 
       if (bookingError) throw bookingError;
 
       // Fetch total revenue
-      const { data: paymentsData, error: paymentsError } = await supabase
+      let paymentsQuery = supabase
         .from("payments")
         .select("amount")
         .eq("status", "completed");
+
+      // Apply date filter if provided
+      if (dateRange?.from) {
+        paymentsQuery = paymentsQuery.filter(
+          "created_at",
+          dateRange.to ? "between" : "gte",
+          dateRange.from.toISOString(),
+          dateRange.to ? dateRange.to.toISOString() : undefined,
+        );
+      }
+
+      const { data: paymentsData, error: paymentsError } = await paymentsQuery;
 
       if (paymentsError) throw paymentsError;
 
@@ -174,17 +256,38 @@ export default function DashboardStats() {
         "In Use": 0,
         Available: 0,
         Maintenance: 0,
+        Ready: 0,
       };
 
+      // Count vehicles by status
       vehiclesData?.forEach((vehicle) => {
         if (vehicle.status === "On Ride") {
           vehicleStatusCounts["In Use"] += 1;
         } else if (vehicle.status === "Available") {
           vehicleStatusCounts["Available"] += 1;
-        } else if (vehicle.status === "Maintenance") {
+        } else if (
+          vehicle.status === "Maintenance" ||
+          vehicle.status === "maintenance"
+        ) {
           vehicleStatusCounts["Maintenance"] += 1;
+        } else if (vehicle.status === "Ready" || vehicle.status === "ready") {
+          vehicleStatusCounts["Ready"] += 1;
         }
       });
+
+      // Get maintenance count directly from the vehicles table
+      const maintenanceCount =
+        vehiclesData?.filter(
+          (vehicle) =>
+            vehicle.status === "Maintenance" ||
+            vehicle.status === "maintenance",
+        ).length || 0;
+
+      // Get ready count directly from the vehicles table
+      const readyCount =
+        vehiclesData?.filter(
+          (vehicle) => vehicle.status === "Ready" || vehicle.status === "ready",
+        ).length || 0;
 
       const vehicleUtilization = Object.entries(vehicleStatusCounts).map(
         ([name, value]) => ({ name, value }),
@@ -199,6 +302,9 @@ export default function DashboardStats() {
         bookingsByStatus,
         revenueByMonth,
         vehicleUtilization,
+        maintenanceCount,
+        readyCount,
+        activeBookingsCount: activeBookingsCount || 0,
       });
     } catch (error) {
       console.error("Error fetching dashboard data:", error);
@@ -232,11 +338,13 @@ export default function DashboardStats() {
   }
 
   return (
-    <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md space-y-6">
-      <h2 className="text-2xl font-bold mb-6">Dashboard Overview</h2>
+    <div className="p-3 sm:p-6 bg-white dark:bg-gray-800 rounded-lg shadow-md space-y-4 sm:space-y-6">
+      <h2 className="text-xl sm:text-2xl font-bold mb-4 sm:mb-6">
+        Dashboard Overview
+      </h2>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -260,7 +368,7 @@ export default function DashboardStats() {
           <CardContent>
             <div className="text-2xl font-bold">{data.totalVehicles}</div>
             <p className="text-xs text-muted-foreground">
-              Vehicles in the fleet
+              Vehicles in the fleet (excl. maintenance & suspended)
             </p>
           </CardContent>
         </Card>
@@ -292,11 +400,39 @@ export default function DashboardStats() {
             </p>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Maintenance</CardTitle>
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.maintenanceCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Vehicles under maintenance
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">
+              Ready Vehicles
+            </CardTitle>
+            <CheckCircle className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{data.readyCount}</div>
+            <p className="text-xs text-muted-foreground">
+              Vehicles ready for use
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Charts */}
-      <Tabs defaultValue="bookings" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
+      <Tabs defaultValue="bookings" className="w-full mt-6">
+        <TabsList className="grid w-full grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-0">
           <TabsTrigger value="bookings">Booking Status</TabsTrigger>
           <TabsTrigger value="revenue">Monthly Revenue</TabsTrigger>
           <TabsTrigger value="vehicles">Vehicle Utilization</TabsTrigger>
@@ -310,7 +446,7 @@ export default function DashboardStats() {
                 Overview of bookings by their current status
               </CardDescription>
             </CardHeader>
-            <CardContent className="h-80">
+            <CardContent className="h-60 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -349,7 +485,7 @@ export default function DashboardStats() {
                 Revenue trends over the past year
               </CardDescription>
             </CardHeader>
-            <CardContent className="h-80">
+            <CardContent className="h-60 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={data.revenueByMonth}
@@ -384,7 +520,7 @@ export default function DashboardStats() {
                 Current status of vehicles in the fleet
               </CardDescription>
             </CardHeader>
-            <CardContent className="h-80">
+            <CardContent className="h-60 sm:h-80">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie

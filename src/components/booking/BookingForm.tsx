@@ -14,6 +14,8 @@ import {
   Building2,
   Check,
   ChevronRight,
+  User,
+  Search,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -54,6 +56,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 const formSchema = z.object({
+  staffId: z.string().optional(),
+  tenantType: z.enum(["customer", "driver"]).optional(),
+  tenantId: z.string().optional(),
   startDate: z.date({
     required_error: "Start date is required",
   }),
@@ -93,6 +98,29 @@ interface Vehicle {
   features?: string[];
 }
 
+interface Staff {
+  id: string;
+  name: string;
+  role?: string;
+  email?: string;
+}
+
+interface Customer {
+  id: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+}
+
+interface Driver {
+  id: string;
+  name: string;
+  license_number?: string;
+  phone?: string;
+  status?: "available" | "busy" | "inactive";
+}
+
 interface BookingFormProps {
   selectedVehicle?: Vehicle | null;
   onBookingComplete?: (bookingData: any) => void;
@@ -111,6 +139,17 @@ const BookingForm: React.FC<BookingFormProps> = ({
 
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [isLoadingVehicles, setIsLoadingVehicles] = useState(false);
+
+  // Driver login states (replacing staff)
+  const [driversList, setDriversList] = useState<Driver[]>([]);
+  const [isLoadingDrivers, setIsLoadingDrivers] = useState(false);
+  const [selectedDriver, setSelectedDriver] = useState<string>("");
+  const [tenantType, setTenantType] = useState<"customer" | "driver" | "">("");
+  const [tenantList, setTenantList] = useState<(Customer | Driver)[]>([]);
+  const [isLoadingTenants, setIsLoadingTenants] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<
+    (Customer | Driver) | null
+  >(null);
 
   // Default vehicle if none is selected
   const defaultVehicle = {
@@ -163,12 +202,65 @@ const BookingForm: React.FC<BookingFormProps> = ({
       }
     };
 
+    // Fetch drivers list (replacing staff)
+    const fetchDrivers = async () => {
+      setIsLoadingDrivers(true);
+      try {
+        const { data, error } = await supabase
+          .from("drivers")
+          .select("id, name");
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setDriversList(data);
+        }
+      } catch (error) {
+        console.error("Error fetching drivers:", error);
+      } finally {
+        setIsLoadingDrivers(false);
+      }
+    };
+
     fetchVehicles();
+    fetchDrivers();
   }, []);
+
+  // Fetch tenants (customers or drivers) when tenant type changes
+  useEffect(() => {
+    if (!tenantType) return;
+
+    const fetchTenants = async () => {
+      setIsLoadingTenants(true);
+      try {
+        const { data, error } = await supabase
+          .from(tenantType === "customer" ? "customers" : "drivers")
+          .select("id, name");
+
+        if (error) throw error;
+
+        if (data && data.length > 0) {
+          setTenantList(data);
+        } else {
+          setTenantList([]);
+        }
+      } catch (error) {
+        console.error(`Error fetching ${tenantType}s:`, error);
+        setTenantList([]);
+      } finally {
+        setIsLoadingTenants(false);
+      }
+    };
+
+    fetchTenants();
+  }, [tenantType]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
     defaultValues: {
+      staffId: "",
+      tenantType: undefined,
+      tenantId: "",
       startDate: new Date(),
       endDate: new Date(),
       pickupTime: "10:00",
@@ -209,6 +301,12 @@ const BookingForm: React.FC<BookingFormProps> = ({
     );
   }
 
+  // Function to get driver name from driver ID
+  const getDriverName = (driverId: string) => {
+    const driver = driversList.find((d) => d.id === driverId);
+    return driver ? driver.name : "";
+  };
+
   const onSubmit = async (data: FormValues) => {
     if (isSubmitting) return; // Mencegah double submit
     setIsSubmitting(true);
@@ -240,7 +338,24 @@ const BookingForm: React.FC<BookingFormProps> = ({
         payment_status: data.paymentType === "partial" ? "partial" : "unpaid",
         status: "pending",
         created_at: new Date().toISOString(),
+        driver_name: data.staffId ? getDriverName(data.staffId) : "",
+        tenant_type: data.tenantType || null,
       };
+
+      // Add tenant information if driver has selected a tenant
+      if (data.staffId && data.tenantType && data.tenantId) {
+        if (data.tenantType === "customer") {
+          bookingData.user_id = data.tenantId;
+          // Add customer_id field if it exists in your schema
+          bookingData.customer_id = data.tenantId;
+        } else if (data.tenantType === "driver") {
+          // Add driver_id field to the booking data
+          bookingData.driver_id = data.tenantId;
+        }
+
+        // Add driver_id to the booking data (using staffId field which now contains driver id)
+        bookingData.driver_id = data.staffId;
+      }
 
       const { data: insertedBooking, error: bookingError } = await supabase
         .from("bookings")
@@ -390,9 +505,11 @@ const BookingForm: React.FC<BookingFormProps> = ({
   }
 
   return (
-    <Card className="w-full max-w-3xl mx-auto bg-background border shadow-md">
-      <CardHeader>
-        <CardTitle className="text-2xl font-bold">Book Your Rental</CardTitle>
+    <Card className="w-full max-w-3xl mx-auto bg-background border shadow-md overflow-hidden">
+      <CardHeader className="px-4 sm:px-6">
+        <CardTitle className="text-xl sm:text-2xl font-bold">
+          Book Your Rental
+        </CardTitle>
         <CardDescription>
           {selectedVehicle ? (
             <>
@@ -412,10 +529,10 @@ const BookingForm: React.FC<BookingFormProps> = ({
         </CardDescription>
       </CardHeader>
 
-      <CardContent>
+      <CardContent className="px-4 sm:px-6">
         {selectedVehicle && (
-          <div className="mb-6 p-4 bg-muted rounded-lg flex items-center gap-4">
-            <div className="w-20 h-20 overflow-hidden rounded-md">
+          <div className="mb-6 p-3 sm:p-4 bg-muted rounded-lg flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4">
+            <div className="w-full sm:w-20 h-32 sm:h-20 overflow-hidden rounded-md">
               <img
                 src={vehicleToUse.image}
                 alt={vehicleToUse.name}
@@ -439,7 +556,182 @@ const BookingForm: React.FC<BookingFormProps> = ({
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             {step === 1 && (
               <div className="space-y-6">
-                <div className="flex flex-col md:flex-row gap-6">
+                {/* Staff Login Section */}
+                <div className="p-4 bg-muted rounded-lg">
+                  <h3 className="font-medium mb-4 flex items-center">
+                    <User className="h-4 w-4 mr-2 text-primary" />
+                    Driver Login (Traffic)
+                  </h3>
+
+                  <FormField
+                    control={form.control}
+                    name="staffId"
+                    render={({ field }) => (
+                      <FormItem className="mb-4">
+                        <FormLabel>Select Driver</FormLabel>
+                        <Select
+                          disabled={isLoadingDrivers}
+                          onValueChange={(value) => {
+                            field.onChange(value);
+                            setSelectedDriver(value);
+                          }}
+                          value={field.value || ""}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select driver" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {isLoadingDrivers ? (
+                              <div className="flex items-center justify-center p-2">
+                                <span className="text-sm text-muted-foreground">
+                                  Loading...
+                                </span>
+                              </div>
+                            ) : driversList.length === 0 ? (
+                              <div className="flex items-center justify-center p-2">
+                                <span className="text-sm text-muted-foreground">
+                                  No drivers found
+                                </span>
+                              </div>
+                            ) : (
+                              driversList.map((driver) => (
+                                <SelectItem key={driver.id} value={driver.id}>
+                                  {driver.name}{" "}
+                                  {driver.status && `(${driver.status})`}
+                                </SelectItem>
+                              ))
+                            )}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Driver creating this booking
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {selectedDriver && (
+                    <div className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="tenantType"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Tenant Type</FormLabel>
+                            <Select
+                              onValueChange={(value: "customer" | "driver") => {
+                                field.onChange(value);
+                                setTenantType(value);
+                                setSelectedTenant(null);
+                                form.setValue("tenantId", "");
+                              }}
+                              value={field.value || ""}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue placeholder="Select tenant type" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="customer">
+                                  Customer
+                                </SelectItem>
+                                <SelectItem value="driver">Driver</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {tenantType && (
+                        <FormField
+                          control={form.control}
+                          name="tenantId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>
+                                {tenantType === "customer"
+                                  ? "Customer"
+                                  : "Driver"}
+                              </FormLabel>
+                              <Select
+                                disabled={isLoadingTenants}
+                                onValueChange={(value) => {
+                                  field.onChange(value);
+                                  const selected = tenantList.find(
+                                    (t) => t.id === value,
+                                  );
+                                  setSelectedTenant(selected || null);
+                                }}
+                                value={field.value || ""}
+                              >
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue
+                                      placeholder={`Select ${tenantType}`}
+                                    />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {isLoadingTenants ? (
+                                    <div className="flex items-center justify-center p-2">
+                                      <span className="text-sm text-muted-foreground">
+                                        Loading...
+                                      </span>
+                                    </div>
+                                  ) : tenantList.length === 0 ? (
+                                    <div className="flex items-center justify-center p-2">
+                                      <span className="text-sm text-muted-foreground">
+                                        No {tenantType}s found
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    tenantList.map((tenant) => (
+                                      <SelectItem
+                                        key={tenant.id}
+                                        value={tenant.id}
+                                      >
+                                        {tenant.name}
+                                      </SelectItem>
+                                    ))
+                                  )}
+                                </SelectContent>
+                              </Select>
+                              <FormDescription>
+                                {tenantType === "customer"
+                                  ? "Customer who will rent the vehicle"
+                                  : "Driver who will operate the vehicle"}
+                              </FormDescription>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      )}
+
+                      {selectedTenant && (
+                        <div className="flex items-center p-3 bg-primary/10 rounded-md mt-2">
+                          <User className="h-5 w-5 mr-2 text-primary" />
+                          <div className="flex flex-col">
+                            <span className="font-medium text-primary">
+                              {tenantType === "customer"
+                                ? "Customer"
+                                : "Driver"}
+                              : {selectedTenant.name}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              ID: {selectedTenant.id.substring(0, 8)}...
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                   <FormField
                     control={form.control}
                     name="startDate"
@@ -523,7 +815,7 @@ const BookingForm: React.FC<BookingFormProps> = ({
                   />
                 </div>
 
-                <div className="flex flex-col md:flex-row gap-6">
+                <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
                   <FormField
                     control={form.control}
                     name="pickupTime"
@@ -694,6 +986,18 @@ const BookingForm: React.FC<BookingFormProps> = ({
 
                 <div className="bg-muted p-4 rounded-lg">
                   <h3 className="font-medium mb-2">Booking Summary</h3>
+
+                  {selectedTenant && (
+                    <div className="mb-3 p-2 bg-primary/5 rounded border border-primary/20">
+                      <div className="flex items-center">
+                        <User className="h-4 w-4 mr-2 text-primary" />
+                        <span className="font-medium">
+                          {tenantType === "customer" ? "Customer" : "Driver"}:{" "}
+                          {selectedTenant.name}
+                        </span>
+                      </div>
+                    </div>
+                  )}
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
                       <span>Vehicle:</span>

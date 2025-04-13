@@ -48,6 +48,8 @@ import {
   X,
   Tag,
   Settings,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 interface VehicleType {
@@ -76,6 +78,7 @@ interface CarData {
   stnk_expiry: string | null;
   tax_expiry: string | null;
   is_active: boolean;
+  available?: boolean | null; // Add available field to track separately
   vehicle_type_id?: number | null;
   vehicle_type_name?: string;
 }
@@ -93,6 +96,9 @@ const CarsManagement = () => {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [selectedCar, setSelectedCar] = useState<CarData | null>(null);
+  const [expandedModels, setExpandedModels] = useState<Record<string, boolean>>(
+    {},
+  );
 
   // Vehicle Type Management States
   const [isVehicleTypeDialogOpen, setIsVehicleTypeDialogOpen] = useState(false);
@@ -156,6 +162,12 @@ const CarsManagement = () => {
   const fetchCars = async () => {
     try {
       setLoading(true);
+      console.log("Fetching cars from Supabase...");
+
+      // Reset filters when fetching new data
+      setSearchTerm("");
+      setSelectedCategory(null);
+      setSelectedVehicleTypeId(null);
 
       const { data, error } = await supabase
         .from("vehicles")
@@ -167,7 +179,12 @@ const CarsManagement = () => {
         )
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase fetch error:", error);
+        throw error;
+      }
+
+      console.log("Raw data from Supabase:", data);
 
       // Map the data to match the expected CarData structure
       const mappedData =
@@ -177,6 +194,21 @@ const CarsManagement = () => {
             id: number;
             name: string;
           } | null;
+
+          // Ensure boolean values are properly set - handle all possible formats
+          const isActive =
+            car.is_active === true ||
+            car.is_active === "true" ||
+            (car.is_active !== false &&
+              car.is_active !== "false" &&
+              car.is_active !== null);
+
+          const isAvailable =
+            car.available === true ||
+            car.available === "true" ||
+            (car.available !== false &&
+              car.available !== "false" &&
+              car.available !== null);
 
           return {
             id: car.id.toString(),
@@ -197,7 +229,8 @@ const CarsManagement = () => {
             stnk_url: car.stnk_url,
             stnk_expiry: car.stnk_expiry,
             tax_expiry: car.tax_expiry,
-            is_active: car.available !== false,
+            is_active: isActive, // Ensure proper boolean conversion
+            available: isAvailable, // Ensure proper boolean conversion
             vehicle_type_id: car.vehicle_type_id,
             vehicle_type_name: vehicleTypeData
               ? vehicleTypeData.name
@@ -208,10 +241,11 @@ const CarsManagement = () => {
       setCars(mappedData);
       setLoading(false);
 
-      console.log("Fetched cars:", mappedData);
+      console.log("Processed cars data:", mappedData);
     } catch (error) {
       console.error("Error fetching cars:", error);
       setLoading(false);
+      alert(`Failed to fetch cars: ${error.message}`);
     }
   };
 
@@ -337,13 +371,16 @@ const CarsManagement = () => {
         vehicle_type_id: formData.vehicle_type_id
           ? parseInt(formData.vehicle_type_id)
           : null,
+        // Explicitly convert boolean fields
+        is_active: formData.is_active === true,
+        available: formData.status === "available",
       };
 
       const { data, error } = await supabase
         .from("vehicles")
         .update(numericFormData)
         .eq("id", selectedCar.id)
-        .select();
+        .select("*");
 
       if (error) throw error;
 
@@ -444,14 +481,40 @@ const CarsManagement = () => {
 
   const filteredCars = cars.filter(
     (car) =>
-      (car.model.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        car.make.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (searchTerm === "" ||
+        car.model?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        car.make?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         car.license_plate?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         car.color?.toLowerCase().includes(searchTerm.toLowerCase())) &&
       (selectedCategory === null || car.category === selectedCategory) &&
       (selectedVehicleTypeId === null ||
         car.vehicle_type_id === selectedVehicleTypeId),
   );
+
+  console.log("Total cars:", cars.length);
+  console.log("Filtered cars:", filteredCars.length);
+
+  // Group cars by model
+  const groupedByModel = filteredCars.reduce(
+    (acc, car) => {
+      // Handle null or undefined model
+      const modelKey = car.model?.toLowerCase() || "unknown";
+      if (!acc[modelKey]) {
+        acc[modelKey] = [];
+      }
+      acc[modelKey].push(car);
+      return acc;
+    },
+    {} as Record<string, CarData[]>,
+  );
+
+  // Toggle expanded state for a model
+  const toggleModelExpanded = (modelKey: string) => {
+    setExpandedModels((prev) => ({
+      ...prev,
+      [modelKey]: !prev[modelKey],
+    }));
+  };
 
   const categories = [
     "Sedan",
@@ -511,21 +574,78 @@ const CarsManagement = () => {
 
   const handleToggleActive = async (car: CarData) => {
     try {
-      const newStatus = !car.is_active;
-      const { error } = await supabase
-        .from("vehicles")
-        .update({ is_active: newStatus })
-        .eq("id", car.id);
+      // If car is already suspended (is_active is false), we want to make it available
+      // If car is active, we want to suspend it
+      const newIsActive = !car.is_active;
+      // When suspending a car, update its status to "suspended"
+      // When activating a car, set status back to "available"
+      const newStatus = newIsActive ? "available" : "suspended";
 
-      if (error) throw error;
-
-      // Update local state
-      const updatedCars = cars.map((c) =>
-        c.id === car.id ? { ...c, is_active: newStatus } : c,
+      console.log(
+        `Toggling car ${car.id} active status to ${newIsActive} and status to ${newStatus}`,
       );
-      setCars(updatedCars);
+
+      // Make sure we're using the correct table name and field names
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update({
+          is_active: newIsActive,
+          status: newStatus,
+          available: newIsActive, // Update the available field too
+        })
+        .eq("id", car.id)
+        .select("*");
+
+      if (error) {
+        console.error("Supabase update error:", error);
+        throw error;
+      }
+
+      console.log(`Successfully toggled car active status, response:`, data);
+
+      // Show success message
+      alert(`Car ${newIsActive ? "activated" : "suspended"} successfully`);
+
+      // Immediately refresh data from server to ensure UI is in sync
+      await fetchCars();
     } catch (error) {
       console.error("Error toggling car active status:", error);
+      alert(`Failed to update car status: ${error.message}`);
+    }
+  };
+
+  const handleStatusChange = async (car: CarData, newStatus: string) => {
+    try {
+      console.log(`Updating car ${car.id} status to ${newStatus}`);
+
+      // Make sure we're using the correct table name and field names
+      const { data, error } = await supabase
+        .from("vehicles")
+        .update({
+          status: newStatus,
+          // If there's an 'available' field that needs to be updated based on status
+          available: newStatus === "available" ? true : false,
+          // Also update is_active if status is suspended
+          is_active: newStatus === "suspended" ? false : car.is_active,
+        })
+        .eq("id", car.id)
+        .select("*");
+
+      if (error) {
+        console.error("Supabase update error:", error);
+        throw error;
+      }
+
+      console.log(`Successfully updated car status, response:`, data);
+
+      // Show success message
+      alert(`Car status updated to ${newStatus}`);
+
+      // Immediately refresh data from server to ensure UI is in sync
+      await fetchCars();
+    } catch (error) {
+      console.error("Error changing car status:", error);
+      alert(`Failed to update car status: ${error.message}`);
     }
   };
 
@@ -821,7 +941,7 @@ const CarsManagement = () => {
               {
                 cars.filter(
                   (car) =>
-                    car.status === "maintenance" && car.is_active !== false,
+                    car.status === "Maintenance" && car.is_active !== false,
                 ).length
               }
             </div>
@@ -896,7 +1016,7 @@ const CarsManagement = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredCars.length === 0 ? (
+                {Object.keys(groupedByModel).length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={10} className="text-center py-8">
                       {searchTerm ? (
@@ -916,118 +1036,199 @@ const CarsManagement = () => {
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredCars.map((car) => (
-                    <TableRow
-                      key={car.id}
-                      className={car.is_active === false ? "opacity-60" : ""}
-                    >
-                      <TableCell>
-                        {car.image_url ? (
-                          <img
-                            src={car.image_url}
-                            alt={`${car.make} ${car.model}`}
-                            className="w-12 h-12 object-cover rounded"
-                          />
-                        ) : (
-                          <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
-                            <Car className="h-6 w-6 text-muted-foreground" />
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="font-medium">{car.make}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {car.model}
-                        </div>
-                      </TableCell>
-                      <TableCell>{car.year}</TableCell>
-                      <TableCell>{car.license_plate}</TableCell>
-                      <TableCell>
-                        {car.vehicle_type_name || car.category || "-"}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`px-2 py-1 rounded-full text-xs ${car.status === "available" || !car.status ? "bg-green-100 text-green-800" : car.status === "rented" || car.status === "booked" || car.status === "onride" ? "bg-blue-100 text-blue-800" : car.status === "maintenance" ? "bg-yellow-100 text-yellow-800" : "bg-red-100 text-red-800"}`}
-                        >
-                          {car.status || "available"}
-                        </span>
-                      </TableCell>
-                      <TableCell>{car.stnk_expiry || "-"}</TableCell>
-                      <TableCell>{car.tax_expiry || "-"}</TableCell>
-                      <TableCell>
-                        {car.daily_rate
-                          ? `Rp ${car.daily_rate.toLocaleString("id-ID")}`
-                          : "-"}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            onClick={() => openEditDialog(car)}
+                  Object.entries(groupedByModel).map(
+                    ([modelKey, carsInModel]) => {
+                      const isExpanded = expandedModels[modelKey] || false;
+                      const availableCarsCount = carsInModel.filter(
+                        (car) =>
+                          (car.status === "available" || !car.status) &&
+                          car.is_active !== false,
+                      ).length;
+
+                      return (
+                        <div key={modelKey}>
+                          {/* Model Group Header */}
+                          <TableRow
+                            className="bg-muted/50 cursor-pointer hover:bg-muted"
+                            onClick={() => toggleModelExpanded(modelKey)}
                           >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant={
-                              car.is_active === false ? "default" : "outline"
-                            }
-                            size="icon"
-                            className={
-                              car.is_active === false
-                                ? "bg-amber-500 hover:bg-amber-600"
-                                : "bg-slate-200 hover:bg-slate-300"
-                            }
-                            onClick={() => handleToggleActive(car)}
-                            title={
-                              car.is_active === false ? "Activate" : "Suspend"
-                            }
-                          >
-                            {car.is_active === false ? (
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="24"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="h-4 w-4"
+                            <TableCell colSpan={10} className="py-2">
+                              <div className="flex items-center">
+                                {isExpanded ? (
+                                  <ChevronDown className="h-4 w-4 mr-2" />
+                                ) : (
+                                  <ChevronRight className="h-4 w-4 mr-2" />
+                                )}
+                                <span className="font-medium uppercase">
+                                  {carsInModel[0].model}
+                                </span>
+                                <span className="ml-2 text-sm text-muted-foreground">
+                                  ({carsInModel.length} total,{" "}
+                                  {availableCarsCount} available)
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+
+                          {/* Individual Cars (shown when expanded) */}
+                          {isExpanded &&
+                            carsInModel.map((car) => (
+                              <TableRow
+                                key={car.id}
+                                className={
+                                  car.is_active === false ? "opacity-60" : ""
+                                }
                               >
-                                <path d="M5 12h14" />
-                                <path d="M12 5v14" />
-                              </svg>
-                            ) : (
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="24"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="h-4 w-4"
-                              >
-                                <path d="M5 12h14" />
-                              </svg>
-                            )}
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="icon"
-                            className="text-destructive"
-                            onClick={() => openDeleteDialog(car)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                                <TableCell>
+                                  {car.image_url ? (
+                                    <img
+                                      src={car.image_url}
+                                      alt={`${car.make} ${car.model}`}
+                                      className="w-12 h-12 object-cover rounded"
+                                    />
+                                  ) : (
+                                    <div className="w-12 h-12 bg-muted rounded flex items-center justify-center">
+                                      <Car className="h-6 w-6 text-muted-foreground" />
+                                    </div>
+                                  )}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-medium">{car.make}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {car.model}
+                                  </div>
+                                </TableCell>
+                                <TableCell>{car.year}</TableCell>
+                                <TableCell>
+                                  <div className="font-medium">
+                                    {car.license_plate}
+                                  </div>
+                                  <div className="text-sm text-muted-foreground">
+                                    Color: {car.color || "N/A"}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  {car.vehicle_type_name || car.category || "-"}
+                                </TableCell>
+                                <TableCell>
+                                  {car.is_active === false ? (
+                                    <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                                      Suspended
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className={`px-2 py-1 rounded-full text-xs ${car.status === "available" || !car.status ? "bg-green-100 text-green-800" : car.status === "rented" || car.status === "booked" || car.status === "onride" ? "bg-blue-100 text-blue-800" : car.status === "Maintenance" ? "bg-yellow-100 text-yellow-800" : car.status === "suspended" ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-800"}`}
+                                    >
+                                      {car.status || "available"}
+                                    </span>
+                                  )}
+                                  {/* Status debug info */}
+                                  <div className="text-xs text-gray-500 mt-1">
+                                    DB: is_active={String(car.is_active)},
+                                    available=
+                                    {String(car.available)}
+                                  </div>
+                                </TableCell>
+                                <TableCell>{car.stnk_expiry || "-"}</TableCell>
+                                <TableCell>{car.tax_expiry || "-"}</TableCell>
+                                <TableCell>
+                                  {car.daily_rate
+                                    ? `Rp ${car.daily_rate.toLocaleString("id-ID")}`
+                                    : "-"}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <div className="flex justify-end gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => openEditDialog(car)}
+                                      title="Edit"
+                                    >
+                                      <Pencil className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className={
+                                        car.status === "Maintenance"
+                                          ? "bg-yellow-100 text-yellow-800"
+                                          : ""
+                                      }
+                                      onClick={() => {
+                                        const newStatus =
+                                          car.status === "Maintenance"
+                                            ? "available"
+                                            : "Maintenance";
+                                        handleStatusChange(car, newStatus);
+                                      }}
+                                      title={
+                                        car.status === "Maintenance"
+                                          ? "Set as Available"
+                                          : "Set as Maintenance"
+                                      }
+                                    >
+                                      <Settings className="h-4 w-4" />
+                                    </Button>
+                                    <Button
+                                      variant={
+                                        car.is_active === false
+                                          ? "default"
+                                          : "outline"
+                                      }
+                                      size="icon"
+                                      className={
+                                        car.is_active === false
+                                          ? "bg-amber-500 hover:bg-amber-600"
+                                          : "bg-slate-200 hover:bg-slate-300"
+                                      }
+                                      onClick={() => handleToggleActive(car)}
+                                      title={
+                                        car.is_active === false
+                                          ? "Activate"
+                                          : "Suspend"
+                                      }
+                                    >
+                                      {car.is_active === false ? (
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          width="24"
+                                          height="24"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          className="h-4 w-4"
+                                        >
+                                          <path d="M5 12h14" />
+                                          <path d="M12 5v14" />
+                                        </svg>
+                                      ) : (
+                                        <svg
+                                          xmlns="http://www.w3.org/2000/svg"
+                                          width="24"
+                                          height="24"
+                                          viewBox="0 0 24 24"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          className="h-4 w-4"
+                                        >
+                                          <path d="M5 12h14" />
+                                        </svg>
+                                      )}
+                                    </Button>
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            ))}
                         </div>
-                      </TableCell>
-                    </TableRow>
-                  ))
+                      );
+                    },
+                  )
                 )}
               </TableBody>
             </Table>
@@ -1035,7 +1236,8 @@ const CarsManagement = () => {
         </CardContent>
         <CardFooter className="flex justify-between">
           <div className="text-sm text-muted-foreground">
-            Showing {filteredCars.length} of {cars.length} cars
+            Showing {filteredCars.length} of {cars.length} cars in{" "}
+            {Object.keys(groupedByModel).length} model groups
             {searchTerm && ` (filtered by "${searchTerm}")`}
           </div>
           <Button variant="outline" onClick={fetchCars}>

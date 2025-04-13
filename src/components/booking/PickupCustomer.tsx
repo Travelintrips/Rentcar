@@ -57,6 +57,17 @@ const PickupCustomer: React.FC<PickupCustomerProps> = ({
     }));
   };
 
+  const handleCheckAll = () => {
+    // If all items are checked, uncheck all; otherwise, check all
+    const newValue = !allChecked;
+    setConfirmChecklist({
+      identityVerified: newValue,
+      paymentConfirmed: newValue,
+      documentsProvided: newValue,
+      keysHandedOver: newValue,
+    });
+  };
+
   const handleConfirmPickup = async () => {
     if (!allChecked) {
       alert("Please complete all checklist items before confirming pickup");
@@ -208,7 +219,17 @@ const PickupCustomer: React.FC<PickupCustomerProps> = ({
           </div>
 
           <div className="space-y-4">
-            <h3 className="font-medium">Pickup Checklist</h3>
+            <div className="flex justify-between items-center">
+              <h3 className="font-medium">Pickup Checklist</h3>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCheckAll}
+              >
+                {allChecked ? "Uncheck All" : "Check All"}
+              </Button>
+            </div>
             <div className="space-y-3">
               <div className="flex items-center space-x-2">
                 <Checkbox
