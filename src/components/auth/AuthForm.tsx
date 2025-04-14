@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { v4 as uuidv4 } from "uuid";
 import {
   Eye,
   EyeOff,
@@ -20,6 +21,7 @@ import { supabase } from "@/lib/supabase";
 import SelfieCapture from "./SelfieCapture";
 import ImageUpload from "./ImageUpload";
 import { useToast } from "@/components/ui/use-toast";
+import { useLocationTracking } from "@/hooks/useLocationTracking";
 
 import {
   Card,
@@ -192,6 +194,19 @@ const AuthForm: React.FC<AuthFormProps> = ({
     { id: number; role_name: string }[]
   >([]);
 
+  // Use the location tracking hook
+  const {
+    startTracking,
+    stopTracking,
+    requestLocationPermission,
+    getUserLocation,
+    isTracking,
+    permissionStatus,
+    currentPosition,
+    locationError,
+    getOrCreateDeviceId,
+  } = useLocationTracking();
+
   // Fetch roles from Supabase when component mounts
   useEffect(() => {
     const fetchRoles = async () => {
@@ -284,6 +299,7 @@ const AuthForm: React.FC<AuthFormProps> = ({
   const [selfieImage, setSelfieImage] = useState<string>("");
   const [blinkDetected, setBlinkDetected] = useState(false);
   const [selfieRequired, setSelfieRequired] = useState(true);
+  const [registerError, setRegisterError] = useState<string | null>(null);
 
   const handleLoginSubmit = async (data: LoginFormValues) => {
     setLoginError(null);
@@ -330,6 +346,109 @@ const AuthForm: React.FC<AuthFormProps> = ({
 
       console.log("User logged in with role:", userRole);
 
+      // Get device ID
+      const deviceId = getOrCreateDeviceId();
+
+      // Try to get user's location
+      try {
+        // Check if we have permission first
+        const hasPermission = await requestLocationPermission();
+        if (!hasPermission) {
+          console.warn("Location permission denied during login");
+          toast({
+            title: "Location Access Denied",
+            description: "Some features may not work without location access.",
+            variant: "destructive",
+          });
+          // Still update the last login time even without location
+          await supabase
+            .from("users")
+            .update({
+              device_id: deviceId,
+              last_login: new Date().toISOString(),
+            })
+            .eq("id", authData.user.id);
+        } else {
+          // We have permission, get the location
+          const position = await getUserLocation();
+          const { latitude, longitude } = position.coords;
+
+          // Store location in local storage
+          localStorage.setItem("userLatitude", latitude.toString());
+          localStorage.setItem("userLongitude", longitude.toString());
+
+          // Update user record with location and device ID
+          const { error: updateError } = await supabase
+            .from("users")
+            .update({
+              latitude,
+              longitude,
+              device_id: deviceId,
+              last_login: new Date().toISOString(),
+            })
+            .eq("id", authData.user.id);
+
+          if (updateError) {
+            console.error("Error updating user location:", updateError);
+          }
+
+          // Store initial location in users_locations table directly
+          const { error: locationError } = await supabase
+            .from("users_locations")
+            .upsert(
+              {
+                user_id: authData.user.id,
+                user_email: authData.user.email || "",
+                full_name:
+                  authData.user.user_metadata.full_name ||
+                  data.email.split("@")[0],
+                latitude,
+                longitude,
+                device_id: deviceId,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "user_id" },
+            );
+
+          if (locationError) {
+            console.error(
+              "Error storing initial location in users_locations:",
+              locationError,
+            );
+          } else {
+            console.log(
+              "Initial location stored in users_locations successfully",
+            );
+          }
+
+          // Start tracking user location using the hook
+          startTracking(
+            authData.user.id,
+            authData.user.email || "",
+            authData.user.user_metadata.full_name || data.email.split("@")[0],
+            {
+              onLocationError: (error) => {
+                console.error("Location tracking error:", error);
+                toast({
+                  title: "Location Error",
+                  description:
+                    "Could not track your location. Some features may be limited.",
+                  variant: "destructive",
+                });
+              },
+            },
+          );
+        }
+      } catch (locationError) {
+        console.error("Error getting user location:", locationError);
+        toast({
+          title: "Location Error",
+          description:
+            "Could not access your location. Some features may be limited.",
+          variant: "destructive",
+        });
+      }
+
       onLogin(data);
       // Update authentication state after successful login
       if (onAuthStateChange) {
@@ -342,8 +461,6 @@ const AuthForm: React.FC<AuthFormProps> = ({
       setIsSubmitting(false);
     }
   };
-
-  const [registerError, setRegisterError] = useState<string | null>(null);
 
   const handleRegisterSubmit = async (data: RegisterFormValues) => {
     setRegisterError(null);
@@ -378,6 +495,28 @@ const AuthForm: React.FC<AuthFormProps> = ({
           },
         },
       );
+
+      // Get device ID
+      const deviceId = getOrCreateDeviceId();
+
+      // Try to get user's location
+      let latitude = null;
+      let longitude = null;
+
+      try {
+        const position = await getUserLocation();
+        latitude = position.coords.latitude;
+        longitude = position.coords.longitude;
+
+        // Store location in local storage
+        localStorage.setItem("userLatitude", latitude.toString());
+        localStorage.setItem("userLongitude", longitude.toString());
+      } catch (locationError) {
+        console.error(
+          "Error getting user location during registration:",
+          locationError,
+        );
+      }
 
       if (signUpError) {
         console.error("Signup error details:", signUpError);
@@ -461,6 +600,10 @@ const AuthForm: React.FC<AuthFormProps> = ({
           role_id: roleId,
           selfie_url: selfieUrl,
           phone: data.phone,
+          latitude: latitude,
+          longitude: longitude,
+          device_id: deviceId,
+          last_login: new Date().toISOString(),
         });
 
         if (insertError) {
@@ -814,6 +957,73 @@ const AuthForm: React.FC<AuthFormProps> = ({
       // Store user role in local storage regardless of insert/update result
       localStorage.setItem("userRole", data.role);
       localStorage.setItem("userId", authData.user.id);
+
+      // Try to get user's location and start tracking
+      try {
+        // Check if we have permission first
+        const hasPermission = await requestLocationPermission();
+        if (!hasPermission) {
+          console.warn("Location permission denied during registration");
+          toast({
+            title: "Location Access Denied",
+            description: "Some features may not work without location access.",
+            variant: "destructive",
+          });
+        } else {
+          // We have permission, get the location
+          const position = await getUserLocation();
+          const { latitude, longitude } = position.coords;
+
+          // Store location in local storage
+          localStorage.setItem("userLatitude", latitude.toString());
+          localStorage.setItem("userLongitude", longitude.toString());
+
+          // Update user record with location
+          const { error: updateError } = await supabase
+            .from("users")
+            .update({
+              latitude,
+              longitude,
+            })
+            .eq("id", authData.user.id);
+
+          if (updateError) {
+            console.error("Error updating user location:", updateError);
+          }
+
+          // Start tracking user location using the hook
+          startTracking(
+            authData.user.id,
+            authData.user.email || "",
+            data.name,
+            {
+              onLocationError: (error) => {
+                console.error(
+                  "Location tracking error during registration:",
+                  error,
+                );
+                toast({
+                  title: "Location Error",
+                  description:
+                    "Could not track your location. Some features may be limited.",
+                  variant: "destructive",
+                });
+              },
+            },
+          );
+        }
+      } catch (locationError) {
+        console.error(
+          "Error getting user location during registration:",
+          locationError,
+        );
+        toast({
+          title: "Location Error",
+          description:
+            "Could not access your location. Some features may be limited.",
+          variant: "destructive",
+        });
+      }
 
       // Log success message
       console.log(

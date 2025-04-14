@@ -20,6 +20,7 @@ import BookingForm from "./booking/BookingForm";
 import PreRentalInspectionForm from "./booking/PreRentalInspectionForm";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { supabase } from "../lib/supabase";
 
 interface Vehicle {
   id: string;
@@ -34,9 +35,62 @@ interface Vehicle {
   features: string[];
 }
 
+const getDeviceId = () => {
+  let deviceId = localStorage.getItem("device_id");
+  if (!deviceId) {
+    deviceId = crypto.randomUUID();
+    localStorage.setItem("device_id", deviceId);
+  }
+  return deviceId;
+};
+
+const useTrackLocation = () => {
+  useEffect(() => {
+    const startTracking = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const deviceId = getDeviceId();
+
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(
+          async (pos) => {
+            const { latitude, longitude } = pos.coords;
+
+            await supabase.from("users_locations").upsert(
+              {
+                id: user.id, // Use user.id as the primary key
+                user_id: user.id,
+                user_email: user.email,
+                full_name: user.user_metadata?.full_name || user.email,
+                latitude,
+                longitude,
+                device_id: deviceId,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "id" }, // Use id as the conflict resolution field
+            );
+          },
+          (error) => console.error("Error tracking location:", error),
+          { enableHighAccuracy: true, maximumAge: 10000, timeout: 10000 },
+        );
+      } else {
+        console.warn("Geolocation tidak didukung di perangkat ini");
+      }
+    };
+
+    startTracking();
+  }, []);
+};
+
 const Home = () => {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+
+  // Track user location when on home page
+  useTrackLocation();
 
   // Set document title based on language
   useEffect(() => {

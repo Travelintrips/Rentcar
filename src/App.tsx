@@ -8,7 +8,7 @@ import {
 } from "react-router-dom";
 import DamagePaymentForm from "./components/payment/DamagePaymentForm";
 // Import routes dynamically to avoid initialization issues
-const routes = import.meta.env.VITE_TEMPO ? window.__TEMPO_ROUTES__ || [] : [];
+import routes from "tempo-routes";
 import Home from "./components/home";
 import PaymentDetailsPage from "./pages/PaymentDetailsPage";
 import PaymentFormPage from "./pages/PaymentFormPage";
@@ -24,13 +24,18 @@ import BookingManagement from "./components/admin/BookingManagement";
 import InspectionManagement from "./components/admin/InspectionManagement";
 import ChecklistManagement from "./components/admin/ChecklistManagement";
 import DamageManagement from "./components/admin/DamageManagement";
+import LocationTracker from "./components/admin/LocationTracker";
 
 import { supabase } from "./lib/supabase";
+
+// Location tracking functionality moved to Home component
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  // Location tracking moved to Home component
 
   useEffect(() => {
     // Check if user is already authenticated
@@ -94,8 +99,8 @@ function App() {
         {/* Conditionally render either tempoRoutes or manual Routes */}
         {import.meta.env.VITE_TEMPO ? (
           <>
-            {/* Import tempo-routes dynamically to avoid initialization issues */}
-            {Array.isArray(routes) && useRoutes(routes)}
+            {/* Tempo routes */}
+            {useRoutes(routes)}
 
             <Routes>
               {/* Payment Routes - Define these first for higher priority */}
@@ -108,8 +113,9 @@ function App() {
               />
 
               <Route path="/" element={<Home />} />
+              <Route path="" element={<Home />} />
               <Route
-                path="admin"
+                path="/admin/*"
                 element={
                   <ProtectedRoute requiredRole="Admin">
                     <AdminLayout />
@@ -126,6 +132,10 @@ function App() {
                 <Route path="inspections" element={<InspectionManagement />} />
                 <Route path="checklist" element={<ChecklistManagement />} />
                 <Route path="damages" element={<DamageManagement />} />
+                <Route
+                  path="location-dashboard"
+                  element={<LocationTracker />}
+                />
               </Route>
 
               {/* Allow Tempo routes to capture /tempobook paths */}
@@ -144,11 +154,12 @@ function App() {
             />
 
             <Route path="/" element={<Home />} />
+            <Route path="" element={<Home />} />
             <Route index element={<Home />} />
             <Route path="/booking" element={<BookingPage />} />
 
             <Route
-              path="admin"
+              path="/admin/*"
               element={
                 <ProtectedRoute requiredRole="Admin">
                   <AdminLayout />
@@ -165,6 +176,7 @@ function App() {
               <Route path="inspections" element={<InspectionManagement />} />
               <Route path="checklist" element={<ChecklistManagement />} />
               <Route path="damages" element={<DamageManagement />} />
+              <Route path="location-dashboard" element={<LocationTracker />} />
             </Route>
 
             {/* Catch-all route */}
