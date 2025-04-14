@@ -6,7 +6,12 @@ import { BrowserRouter } from "react-router-dom";
 import "./lib/i18n";
 
 import { TempoDevtools } from "tempo-devtools";
-TempoDevtools.init();
+// Initialize Tempo with error handling
+try {
+  TempoDevtools.init();
+} catch (error) {
+  console.error("Failed to initialize Tempo devtools:", error);
+}
 
 const basename = import.meta.env.BASE_URL;
 

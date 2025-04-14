@@ -174,6 +174,20 @@ const AdminLayout = () => {
               <CheckSquare className="h-5 w-5 text-white" />
               {sidebarOpen && <span className="ml-3">Checklist Items</span>}
             </Link>
+            <Link
+              to="location-dashboard"
+              className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/location-dashboard") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
+            >
+              <Package className="h-5 w-5 text-white" />
+              {sidebarOpen && <span className="ml-3">Tracking Lokasi</span>}
+            </Link>
+            <Link
+              to="location-dashboard"
+              className={`flex items-center p-3 rounded-lg hover:bg-white/20 transition-colors duration-200 ${location.pathname.includes("/admin/location-dashboard") ? "bg-white/20 font-medium text-white" : "text-white/80"} ${!sidebarOpen && "justify-center"}`}
+            >
+              <Package className="h-5 w-5 text-white" />
+              {sidebarOpen && <span className="ml-3">Tracking Lokasi</span>}
+            </Link>
           </nav>
 
           {/* Search Value Display */}

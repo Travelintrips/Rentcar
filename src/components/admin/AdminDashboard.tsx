@@ -69,6 +69,7 @@ import StaffPage from "./StaffPage";
 import StatCard from "./StatCard";
 import DashboardCharts from "./DashboardCharts";
 import DashboardStats from "./DashboardStats";
+import LocationTracker from "./LocationTracker";
 
 interface DashboardStats {
   totalVehicles: number;
@@ -836,6 +837,14 @@ const AdminDashboard = () => {
                 paymentMethodData={chartData.paymentMethodData}
                 isLoading={loading}
               />
+
+              {/* Location Tracker Section */}
+              <div className="mt-8">
+                <h2 className="text-2xl font-bold tracking-tight mb-6">
+                  User Location Tracking
+                </h2>
+                <LocationTracker />
+              </div>
 
               {/* Detailed Data Table Section */}
               <div className="mt-8">
