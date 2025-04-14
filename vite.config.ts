@@ -4,6 +4,10 @@ import react from "@vitejs/plugin-react-swc";
 import { tempo } from "tempo-devtools/dist/vite";
 
 // https://vitejs.dev/config/
+// Increase memory limit for Node.js process
+process.env.NODE_OPTIONS =
+  process.env.NODE_OPTIONS || "--max-old-space-size=4096";
+
 export default defineConfig({
   base: "/",
   optimizeDeps: {
